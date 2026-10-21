@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UNA Chat - Seguridad Informática</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f3f5f8}
+header{background:#17365d;color:white;padding:18px;text-align:center}
+#messages{list-style:none;padding:15px;margin:0 0 110px}
+#messages li{background:white;margin-bottom:10px;padding:12px;border-radius:8px;overflow-wrap:anywhere}
+#messages img,#messages video,#messages iframe{display:block;max-width:100%;width:400px;margin-top:10px;border:0;border-radius:8px}
+#messages iframe{aspect-ratio:16/9}form{position:fixed;bottom:0;width:100%;background:#17365d;padding:12px;display:flex;gap:8px}
+input{padding:12px;border:1px solid #ccc;border-radius:6px;min-width:0}#nombre{width:20%}#m{flex:1}
+button{padding:12px 20px;background:#8ae0ff;border:0;border-radius:6px;cursor:pointer}
+#error{color:#b00020;padding:10px;position:fixed;bottom:67px;background:#fff;width:100%}
+#error:empty{display:none}@media(max-width:600px){form{flex-wrap:wrap}#nombre{width:100%}}
+</style>
+</head>
+<body>
+<header><h2>UNA Chat</h2><p>Laboratorio 5 - Seguridad Informática</p><p>Envía texto o pega una URL de imagen, video o YouTube.</p></header>
+<ul id="messages" aria-live="polite"></ul>
+<div id="error" role="alert"></div>
+<form id="chatForm">
+  <input id="nombre" placeholder="Username" aria-label="Username" maxlength="40">
+  <input id="m" placeholder="Escriba un mensaje" aria-label="Escriba un mensaje" required>
+  <button type="submit">Enviar</button>
+</form>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+'use strict';
+const socket = io();
+const form = document.getElementById('chatForm');
+const messages = document.getElementById('messages');
+const input = document.getElementById('m');
+const nombre = document.getElementById('nombre');
+const error = document.getElementById('error');
+
+function agregarTexto(li, texto) {
+  const span = document.createElement('span');
+  span.textContent = texto;
+  li.appendChild(span);
+}
+function idYoutube(valor) {
+  try {
+    const u = new URL(valor);
+    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) return null;
+    const host = u.hostname.toLowerCase();
+    let id = null;
+    if (host === 'youtu.be' || host === 'www.youtu.be') id = u.pathname.slice(1);
+    else if (['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(host)) {
+      if (u.pathname === '/watch') id = u.searchParams.get('v');
+      else if (/^\/(embed|shorts)\//.test(u.pathname)) id = u.pathname.split('/')[2];
+    }
+    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
+  } catch { return null; }
+}
+function mostrarMensaje(datos) {
+  let msg;
+  try { msg = typeof datos === 'string' ? JSON.parse(datos) : datos; }
+  catch { return; }
+  if (!msg || msg.valido !== true || typeof msg.mensaje !== 'string') return;
+  const li = document.createElement('li');
+  const autor = document.createElement('strong');
+  autor.textContent = (typeof msg.nombre === 'string' ? msg.nombre : 'Anónimo') + ': ';
+  autor.style.color = /^#[0-9a-fA-F]{6}$/.test(msg.color) ? msg.color : '#333333';
+  li.appendChild(autor);
+
+  let url = null;
+  if (['imagen', 'video', 'youtube'].includes(msg.tipo)) {
+    try {
+      const candidata = new URL(msg.url);
+      if (['http:', 'https:'].includes(candidata.protocol) && !candidata.username && !candidata.password) url = candidata;
+    } catch {}
+  }
+  if (msg.tipo === 'imagen' && url && /\.(jpe?g|png|gif|webp)$/i.test(url.pathname)) {
+    const img = document.createElement('img');
+    img.src = url.href;
+    img.alt = 'Imagen enviada';
+    img.loading = 'lazy';
+    li.appendChild(img);
+  } else if (msg.tipo === 'video' && url && /\.(mp4|webm|ogg)$/i.test(url.pathname)) {
+    const video = document.createElement('video');
+    video.src = url.href;
+    video.controls = true;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    li.appendChild(video);
+  } else if (msg.tipo === 'youtube' && url && idYoutube(url.href)) {
+    const iframe = document.createElement('iframe');
+    iframe.src = 'https://www.youtube-nocookie.com/embed/' + idYoutube(url.href);
+    iframe.title = 'Video de YouTube';
+    iframe.loading = 'lazy';
+    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
+    iframe.setAttribute('allow','encrypted-media; picture-in-picture; fullscreen');
+    iframe.setAttribute('allowfullscreen','');
+    li.appendChild(iframe);
+  } else agregarTexto(li, msg.mensaje);
+  messages.appendChild(li);
+  li.scrollIntoView({block:'end'});
+}
+form.addEventListener('submit', event => {
+  event.preventDefault();
+  error.textContent = '';
+  const mensaje = input.value.trim();
+  if (!mensaje) return;
+  socket.emit('Evento-Mensaje-Server', JSON.stringify({nombre:nombre.value.trim() || 'Anónimo',mensaje,color:'#17365d'}));
+  input.value = '';
+  input.focus();
+});
+socket.on('Evento-Error', mensaje => { error.textContent = String(mensaje || 'Mensaje no permitido'); });
+socket.on('Evento-Mensaje-Server', mostrarMensaje);
+</script>
+</body>
+</html>
