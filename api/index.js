@@ -13,17 +13,6 @@ app.get('/', (req, res) => {
 });
 app.use('/libs', express.static(path.join(__dirname, '..', 'libs')));
 
-// RUTA TEMPORAL para provocar un error controlado (borrar después)
-app.get('/debug-sentry', async (req, res) => {
-  try {
-    throw new Error('Error controlado de prueba - Lab 7');
-  } catch (e) {
-    Sentry.captureException(e);
-    await Sentry.flush(2000);
-    res.status(500).send('Error de prueba enviado a Sentry');
-  }
-});
-
 Sentry.setupExpressErrorHandler(app);
 
 module.exports = app;
