@@ -28,7 +28,7 @@ const sdk = new NodeSDK({
     exporter: new OTLPMetricExporter({ headers }),
     exportIntervalMillis: 15000,
   }),
-  logRecordProcessors: [new BatchLogRecordProcessor(new OTLPLogExporter({ headers }))],
+  logRecordProcessors: [new BatchLogRecordProcessor({ exporter: new OTLPLogExporter({ headers }) })],
   instrumentations: [
     getNodeAutoInstrumentations({ '@opentelemetry/instrumentation-fs': { enabled: false } }),
   ],
