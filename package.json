@@ -11,9 +11,14 @@
     "@opentelemetry/sdk-metrics": "^3.0.0",
     "@opentelemetry/sdk-node": "^0.300.0",
     "@sentry/node": "^11.10.0",
+    "cookie-parser": "^1.4.7",
     "dotenv": "^18.0.9",
     "express": "*",
+    "express-session": "^1.19.0",
+    "jose": "^6.2.15",
     "mocha": "^10.2.0",
+    "openid-client": "^6.8.9",
+    "pg": "^8.23.1",
     "socket.io": "*"
   },
   "scripts": {
