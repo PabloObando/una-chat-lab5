@@ -1,115 +1,573 @@
 <!doctype html>
 <html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>UNA Chat - Seguridad Informática</title>
-<style>
-*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#f3f5f8}
-header{background:#17365d;color:white;padding:18px;text-align:center}
-#messages{list-style:none;padding:15px;margin:0 0 110px}
-#messages li{background:white;margin-bottom:10px;padding:12px;border-radius:8px;overflow-wrap:anywhere}
-#messages img,#messages video,#messages iframe{display:block;max-width:100%;width:400px;margin-top:10px;border:0;border-radius:8px}
-#messages iframe{aspect-ratio:16/9}form{position:fixed;bottom:0;width:100%;background:#17365d;padding:12px;display:flex;gap:8px}
-input{padding:12px;border:1px solid #ccc;border-radius:6px;min-width:0}#nombre{width:20%}#m{flex:1}
-button{padding:12px 20px;background:#8ae0ff;border:0;border-radius:6px;cursor:pointer}
-#error{color:#b00020;padding:10px;position:fixed;bottom:67px;background:#fff;width:100%}
-#error:empty{display:none}@media(max-width:600px){form{flex-wrap:wrap}#nombre{width:100%}}
-</style>
-</head>
-<body>
-<header><h2>UNA Chat</h2><p>Laboratorio 5 - Seguridad Informática</p><p>Envía texto o pega una URL de imagen, video o YouTube.</p></header>
-<ul id="messages" aria-live="polite"></ul>
-<div id="error" role="alert"></div>
-<form id="chatForm">
-  <input id="nombre" placeholder="Username" aria-label="Username" maxlength="40">
-  <input id="m" placeholder="Escriba un mensaje" aria-label="Escriba un mensaje" required>
-  <button type="submit">Enviar</button>
-</form>
-<script src="/socket.io/socket.io.js"></script>
-<script>
-'use strict';
-const socket = io();
-const form = document.getElementById('chatForm');
-const messages = document.getElementById('messages');
-const input = document.getElementById('m');
-const nombre = document.getElementById('nombre');
-const error = document.getElementById('error');
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chat Socket.IO UNA</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;600&family=Source+Serif+4:opsz,wght@8..60,600&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        --paper: #f4efe4;
+        --paper-raised: #fffaf2;
+        --ink: #241c14;
+        --ink-soft: #5c4632;
+        --line: #e2d3bc;
+        --pine: #1d3530;
+        --pine-ink: #f6f0e4;
+        --clay: #b8431f;
+        --gold: #f0c14b;
+        --shadow: 0 10px 24px rgba(36, 28, 20, 0.12);
+      }
 
-function agregarTexto(li, texto) {
-  const span = document.createElement('span');
-  span.textContent = texto;
-  li.appendChild(span);
-}
-function idYoutube(valor) {
-  try {
-    const u = new URL(valor);
-    if (!['https:', 'http:'].includes(u.protocol) || u.username || u.password) return null;
-    const host = u.hostname.toLowerCase();
-    let id = null;
-    if (host === 'youtu.be' || host === 'www.youtu.be') id = u.pathname.slice(1);
-    else if (['youtube.com', 'www.youtube.com', 'm.youtube.com'].includes(host)) {
-      if (u.pathname === '/watch') id = u.searchParams.get('v');
-      else if (/^\/(embed|shorts)\//.test(u.pathname)) id = u.pathname.split('/')[2];
+      * { box-sizing: border-box; }
+
+      html, body { height: 100%; }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(240, 193, 75, 0.18), transparent 28rem),
+          var(--paper);
+        font: 400 1rem/1.45 "Source Sans 3", "Segoe UI", sans-serif;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-height: 100%;
+        caret-color: var(--clay);
+      }
+
+      ::selection {
+        background: #f0c14b;
+        color: var(--ink);
+      }
+
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1.25rem 1.5rem;
+        padding: 1.5rem 1.5rem 0.75rem;
+      }
+
+      .brand {
+        min-width: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-family: "Source Serif 4", Georgia, serif;
+        font-size: clamp(1.8rem, 3vw, 2.6rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+        text-wrap: balance;
+      }
+
+      .brand p {
+        margin: 0.7rem 0 0;
+        max-width: 42rem;
+        color: var(--ink-soft);
+      }
+
+      main {
+        overflow: auto;
+        padding: 0.5rem 1.5rem 1rem;
+        scrollbar-color: var(--clay) transparent;
+      }
+
+      #empty-state {
+        margin: 2.5rem 0 0;
+        max-width: 28rem;
+        color: var(--ink-soft);
+      }
+
+      #empty-state strong {
+        display: block;
+        margin-bottom: 0.25rem;
+        color: var(--ink);
+        font-size: 1.15rem;
+      }
+
+      #messages {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 0.55rem;
+      }
+
+      #messages li {
+        max-width: 46rem;
+        padding: 0.7rem 0.9rem;
+        background: var(--paper-raised);
+        border-radius: 0.4rem 1rem 1rem 0.4rem;
+        box-shadow: var(--shadow);
+        animation: arrive 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      #messages li:nth-child(even) {
+        background: #f7ecda;
+      }
+
+      #messages img,
+      #messages iframe {
+        display: block;
+        width: min(100%, 28rem);
+        max-height: 16rem;
+        margin-top: 0.55rem;
+        border: 0;
+        border-radius: 0.4rem;
+        background: var(--paper);
+      }
+
+      #messages iframe {
+        height: auto;
+        aspect-ratio: 16 / 9;
+      }
+
+      form {
+        display: grid;
+        grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr) auto;
+        gap: 0.65rem 0.75rem;
+        align-items: end;
+        padding: 0.9rem 1.5rem 1.1rem;
+        background: var(--pine);
+        color: var(--pine-ink);
+        box-shadow: 0 -8px 20px rgba(29, 53, 48, 0.16);
+      }
+
+      label {
+        display: block;
+        margin-bottom: 0.3rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        color: #d9c7a4;
+      }
+
+      input {
+        width: 100%;
+        border: 0;
+        border-radius: 0.35rem;
+        padding: 0.7rem 0.75rem;
+        background: var(--paper-raised);
+        color: var(--ink);
+        font: inherit;
+      }
+
+      button {
+        height: 2.7rem;
+        padding: 0 1.15rem;
+        border: 0;
+        border-radius: 0.35rem;
+        background: var(--gold);
+        color: var(--ink);
+        font: 600 1rem/1 "Source Sans 3", sans-serif;
+        cursor: pointer;
+      }
+
+      button:hover { background: #ffd56a; }
+
+      button:disabled {
+        cursor: progress;
+      }
+
+      #login-gate {
+        width: min(100%, 26rem);
+        padding: 1.75rem 1.6rem 1.45rem;
+        background: var(--paper-raised);
+        border-radius: 0.5rem;
+        box-shadow: 0 16px 36px rgba(36, 28, 20, 0.14);
+      }
+
+      #login-gate h2 {
+        margin: 0;
+        font-family: "Source Serif 4", Georgia, serif;
+        font-size: clamp(1.7rem, 3vw, 2.15rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        line-height: 1.1;
+        text-wrap: balance;
+      }
+
+      #login-lead {
+        margin: 0.7rem 0 0;
+        max-width: 34ch;
+        color: var(--ink-soft);
+      }
+
+      #login-error {
+        margin: 1rem 0 0;
+        padding: 0.7rem 0.8rem;
+        border-radius: 0.35rem;
+        background: #f6ddd2;
+        color: #7a2a10;
+      }
+
+      #login-button {
+        width: 100%;
+        height: 2.9rem;
+        margin-top: 1.25rem;
+      }
+
+      #login-button:disabled {
+        background: #e3c56a;
+        color: var(--ink);
+      }
+
+      body:has(#login-gate:not([hidden])) main {
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding-top: 2.5rem;
+      }
+
+      body:has(#login-gate:not([hidden])) #empty-state,
+      body:has(#login-gate:not([hidden])) #messages {
+        display: none;
+      }
+
+      #session-bar {
+        display: flex;
+        flex: 0 1 auto;
+        gap: 0.85rem;
+        align-items: center;
+        max-width: 100%;
+        margin: 0;
+        padding: 0.4rem 0.4rem 0.4rem 0.55rem;
+        background: var(--paper-raised);
+        border-radius: 0.45rem;
+        box-shadow: 0 8px 18px rgba(36, 28, 20, 0.1);
+      }
+
+      #session-identity {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        min-width: 0;
+      }
+
+      #session-details {
+        display: grid;
+        min-width: 0;
+        line-height: 1.2;
+      }
+
+      #session-photo {
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 50%;
+        object-fit: cover;
+        flex: 0 0 auto;
+        background: var(--line);
+      }
+
+      #session-name {
+        margin: 0;
+        color: var(--ink);
+        font-weight: 600;
+        overflow-wrap: anywhere;
+      }
+
+      #session-email {
+        margin: 0;
+        color: var(--ink-soft);
+        font-size: 0.85rem;
+        font-weight: 400;
+        overflow-wrap: anywhere;
+      }
+
+      #logout-button {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 0.4rem;
+        height: 2.35rem;
+        padding: 0 0.85rem;
+        border: 1px solid var(--clay);
+        background: transparent;
+        color: var(--clay);
+      }
+
+      #logout-button svg {
+        width: 1rem;
+        height: 1rem;
+      }
+
+      #logout-button:hover {
+        background: var(--clay);
+        color: var(--paper-raised);
+      }
+
+      #logout-button:disabled {
+        background: transparent;
+        color: #8d5a48;
+        border-color: #8d5a48;
+      }
+
+      form[hidden],
+      #login-gate[hidden],
+      #session-bar[hidden],
+      #login-error[hidden],
+      #session-photo[hidden],
+      #session-email[hidden] {
+        display: none !important;
+      }
+
+      :focus-visible {
+        outline: 3px solid var(--clay);
+        outline-offset: 2px;
+      }
+
+      @keyframes arrive {
+        from { opacity: 0; transform: translateY(8px); filter: blur(3px); }
+        to { opacity: 1; transform: none; filter: none; }
+      }
+
+      @media (max-width: 720px) {
+        header, main, form { padding-left: 1rem; padding-right: 1rem; }
+
+        header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        #session-bar {
+          justify-content: space-between;
+          width: 100%;
+        }
+
+        form {
+          grid-template-columns: 1fr auto;
+        }
+
+        .field-name {
+          grid-column: 1 / -1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>Chat Socket.IO UNA</h1>
+        <p>Messages are shared live with everyone in this room.</p>
+      </div>
+      <div id="session-bar" hidden>
+        <div id="session-identity">
+          <img id="session-photo" alt="" width="40" height="40" hidden>
+          <div id="session-details">
+            <span id="session-name"></span>
+            <span id="session-email" hidden></span>
+          </div>
+        </div>
+        <button type="button" id="logout-button">
+          <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+            <path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M6.5 3.25H3.75v9.5H6.5M6.75 8h6M10.5 5.25 13.25 8 10.5 10.75"/>
+          </svg>
+          <span>Cerrar sesión</span>
+        </button>
+      </div>
+    </header>
+    <main id="transcript">
+      <section id="login-gate" hidden>
+        <h2>Entra a la sala</h2>
+        <p id="login-lead">La sala pide una sesión. El acceso continúa en el siguiente paso.</p>
+        <p id="login-error" hidden role="alert"></p>
+        <button type="button" id="login-button">Iniciar sesión</button>
+      </section>
+      <p id="empty-state"><strong>The room is empty.</strong> Send the first message.</p>
+      <ul id="messages"></ul>
+    </main>
+    <form id="composer" action="">
+      <div class="field field-name">
+        <label for="nombre">Nombre</label>
+        <input id="nombre" autocomplete="off" placeholder="Username"/>
+      </div>
+      <div class="field">
+        <label for="m">Mensaje</label>
+        <input id="m" autocomplete="off" placeholder="Escriba un mensaje" />
+      </div>
+      <button type="submit">Send</button>
+    </form>
+    <script src="/profile.js"></script>
+    <script src="https://cdn.socket.io/4.8.4/socket.io.js"></script>
+    <script src="https://code.jquery.com/jquery-1.11.1.js"></script>
+    <script>
+
+    var colorHexTxt = "";
+
+    function getRandomColor() {
+        var letters = '0123456789ABCDEF';
+        var color = '#';
+        for (var i = 0; i < 6; i++) {
+          color += letters[Math.floor(Math.random() * 16)];
+        }
+
+        return color;
+     }
+
+    function startChat(token) {
+        var socket = token ? io({ auth: { token: token } }) : io();
+
+        $('form').off('submit').on('submit', function () {
+            var nombreTxt = $('#nombre').val() || "Anomimo";
+            var mensajeTxt = $('#m').val();
+
+            if (colorHexTxt == "") {
+                colorHexTxt = getRandomColor();
+            }
+
+            var jsonMsg = { nombre: nombreTxt, mensaje: mensajeTxt, color: colorHexTxt };
+            socket.emit('Evento-Mensaje-Server', JSON.stringify(jsonMsg));
+            $('#m').val('');
+            return false;
+        });
+
+        socket.on('connect_error', function () {
+            $('#login-error').prop('hidden', false).text('No se pudo conectar al chat. Inicia sesión de nuevo.');
+        });
+
+        socket.on('Evento-Mensaje-Server', function (msg) {
+            var msgJson = JSON.parse(msg);
+            var mensajeDisplay = "<b style='color:"+ msgJson.color +"'>" + msgJson.nombre + "</b>: " + msgJson.mensaje;
+            $('#empty-state').attr('hidden', true);
+            $('#messages').append($('<li>').html(mensajeDisplay));
+            var transcript = document.getElementById('transcript');
+            transcript.scrollTop = transcript.scrollHeight;
+        });
     }
-    return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? id : null;
-  } catch { return null; }
-}
-function mostrarMensaje(datos) {
-  let msg;
-  try { msg = typeof datos === 'string' ? JSON.parse(datos) : datos; }
-  catch { return; }
-  if (!msg || msg.valido !== true || typeof msg.mensaje !== 'string') return;
-  const li = document.createElement('li');
-  const autor = document.createElement('strong');
-  autor.textContent = (typeof msg.nombre === 'string' ? msg.nombre : 'Anónimo') + ': ';
-  autor.style.color = /^#[0-9a-fA-F]{6}$/.test(msg.color) ? msg.color : '#333333';
-  li.appendChild(autor);
 
-  let url = null;
-  if (['imagen', 'video', 'youtube'].includes(msg.tipo)) {
-    try {
-      const candidata = new URL(msg.url);
-      if (['http:', 'https:'].includes(candidata.protocol) && !candidata.username && !candidata.password) url = candidata;
-    } catch {}
-  }
-  if (msg.tipo === 'imagen' && url && /\.(jpe?g|png|gif|webp)$/i.test(url.pathname)) {
-    const img = document.createElement('img');
-    img.src = url.href;
-    img.alt = 'Imagen enviada';
-    img.loading = 'lazy';
-    li.appendChild(img);
-  } else if (msg.tipo === 'video' && url && /\.(mp4|webm|ogg)$/i.test(url.pathname)) {
-    const video = document.createElement('video');
-    video.src = url.href;
-    video.controls = true;
-    video.preload = 'metadata';
-    video.playsInline = true;
-    li.appendChild(video);
-  } else if (msg.tipo === 'youtube' && url && idYoutube(url.href)) {
-    const iframe = document.createElement('iframe');
-    iframe.src = 'https://www.youtube-nocookie.com/embed/' + idYoutube(url.href);
-    iframe.title = 'Video de YouTube';
-    iframe.loading = 'lazy';
-    iframe.referrerPolicy = 'strict-origin-when-cross-origin';
-    iframe.setAttribute('allow','encrypted-media; picture-in-picture; fullscreen');
-    iframe.setAttribute('allowfullscreen','');
-    li.appendChild(iframe);
-  } else agregarTexto(li, msg.mensaje);
-  messages.appendChild(li);
-  li.scrollIntoView({block:'end'});
-}
-form.addEventListener('submit', event => {
-  event.preventDefault();
-  error.textContent = '';
-  const mensaje = input.value.trim();
-  if (!mensaje) return;
-  socket.emit('Evento-Mensaje-Server', JSON.stringify({nombre:nombre.value.trim() || 'Anónimo',mensaje,color:'#17365d'}));
-  input.value = '';
-  input.focus();
-});
-socket.on('Evento-Error', mensaje => { error.textContent = String(mensaje || 'Mensaje no permitido'); });
-socket.on('Evento-Mensaje-Server', mostrarMensaje);
-</script>
-</body>
+    function clearSessionIdentity() {
+        $('#session-name').text('');
+        $('#session-email').prop('hidden', true).text('');
+        var photo = document.getElementById('session-photo');
+        photo.hidden = true;
+        photo.removeAttribute('src');
+        photo.alt = '';
+    }
+
+    function showSessionIdentity(user) {
+        var name = user && typeof user.name === 'string' ? user.name.trim() : '';
+        var email = user && typeof user.email === 'string' ? user.email.trim() : '';
+        var label = name || email || 'Usuario';
+        $('#session-name').text(label);
+        if (name && email) {
+            $('#session-email').prop('hidden', false).text(email);
+        } else {
+            $('#session-email').prop('hidden', true).text('');
+        }
+
+        var picture = window.chatProfile
+            ? window.chatProfile.googleProfilePicture(user && user.picture)
+            : '';
+        var photo = document.getElementById('session-photo');
+        photo.onload = null;
+        photo.onerror = null;
+        if (!picture) {
+            photo.hidden = true;
+            photo.removeAttribute('src');
+            photo.alt = '';
+            return label;
+        }
+
+        photo.alt = 'Foto de ' + label;
+        photo.hidden = true;
+        photo.onload = function () {
+            photo.hidden = false;
+        };
+        photo.onerror = function () {
+            photo.hidden = true;
+            photo.removeAttribute('src');
+        };
+        photo.src = picture;
+        return label;
+    }
+
+    function showLogin(message) {
+        $('#composer').prop('hidden', true);
+        $('#session-bar').prop('hidden', true);
+        clearSessionIdentity();
+        $('#login-button').prop('disabled', false).text('Iniciar sesión');
+        $('#login-gate').prop('hidden', false);
+        if (message) {
+            $('#login-error').prop('hidden', false).text(message);
+        } else {
+            $('#login-error').prop('hidden', true).text('');
+        }
+    }
+
+    function loginErrorFromParams(params) {
+        var code = params.get('error') || '';
+        if (!code) return '';
+        if (code === 'access_denied') {
+            return 'Cancelaste el inicio de sesión. Puedes intentarlo de nuevo.';
+        }
+        if (code === 'state') {
+            return 'La sesión de entrada venció. Inténtalo de nuevo.';
+        }
+        return 'No se pudo iniciar sesión. Inténtalo de nuevo.';
+    }
+
+    function bindLogin() {
+        $('#login-button').off('click').on('click', function () {
+            this.disabled = true;
+            this.textContent = 'Entrando…';
+            window.location.assign('/auth/login');
+        });
+    }
+
+    function showSignedIn(user) {
+        var label = showSessionIdentity(user);
+        $('#nombre').val(label).prop('readonly', true);
+        $('#session-bar').prop('hidden', false);
+        $('#login-gate').prop('hidden', true);
+        $('#logout-button').on('click', function () {
+            var button = this;
+            var text = button.querySelector('span');
+            button.disabled = true;
+            if (text) text.textContent = 'Cerrando sesión…';
+            window.location.assign('/auth/logout');
+        });
+        startChat();
+    }
+
+    $(function () {
+        fetch('/auth/config').then(function (response) {
+            return response.json();
+        }).then(function (config) {
+            if (!config || !config.enabled) {
+                startChat();
+                return;
+            }
+
+            var params = new URLSearchParams(window.location.search);
+            var redirectError = loginErrorFromParams(params);
+            if (params.has('error') || params.has('code') || params.has('state')) {
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+
+            return fetch('/sala', { headers: { accept: 'application/json' } }).then(function (response) {
+                if (response.status === 401) {
+                    showLogin(redirectError);
+                    bindLogin();
+                    return;
+                }
+                if (!response.ok) {
+                    showLogin('No se pudo comprobar la sesión. Recarga la página.');
+                    bindLogin();
+                    return;
+                }
+                return response.json().then(function (user) {
+                    showSignedIn(user);
+                });
+            });
+        }).catch(function () {
+            showLogin('No se pudo comprobar la sesión. Recarga la página.');
+        });
+    });
+    </script>
+  </body>
 </html>
