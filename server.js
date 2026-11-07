@@ -1,7 +1,14 @@
-// Instrumentación: debe cargarse antes que express y socket.io
-if (require.main === module) require('./instrumentation');
+// Variables del .env (solo en local; en Render vienen del Environment)
+require('dotenv').config({ quiet: true });
+
+// Observabilidad (Lab 7): solo si hay un endpoint OTLP configurado y se ejecuta con npm start
+if (require.main === module && process.env.OTEL_EXPORTER_OTLP_ENDPOINT) {
+  require('./instrumentation');
+}
 
 var validation = require('./libs/unalib');
+var auth = require('./server/auth');
+var vault = require('./server/vault');
 var app = require('express')();
 var http = require('http').Server(app);
 var io = require('socket.io')(http);
@@ -28,8 +35,49 @@ const INFO = { num: SeverityNumber.INFO, text: 'INFO' };
 const WARN = { num: SeverityNumber.WARN, text: 'WARN' };
 const ERROR = { num: SeverityNumber.ERROR, text: 'ERROR' };
 
+app.disable('x-powered-by');
+
+// ---------- Inicio de sesión con Auth0 (el Client Secret se lee desde Vault) ----------
+function startAuth() {
+  if (!auth.authSettings()) {
+    registrar(WARN, 'Auth0 no está configurado (faltan AUTH0_DOMAIN o AUTH0_CLIENT_ID): el chat queda sin inicio de sesión.');
+    return Promise.resolve();
+  }
+  return vault.loadAuth0ClientSecret()
+    .then(function (secret) { return auth.initAuth0(secret); })
+    .then(function () { registrar(INFO, 'Auth0 listo: el Client Secret se cargó desde Supabase Vault.'); })
+    .catch(function (err) {
+      // Los mensajes de vault.js y auth.js ya vienen sin datos sensibles
+      registrar(ERROR, 'No se pudo iniciar Auth0: ' + (err && err.message ? err.message : 'error desconocido'));
+    });
+}
+
+app.get('/auth/config', function (req, res) {
+  var settings = auth.authSettings();
+  res.set('Cache-Control', 'no-store');
+  if (!settings || !auth.isReady()) {
+    res.json({ enabled: false });
+    return;
+  }
+  res.json({ enabled: true, domain: settings.domain, clientId: settings.clientId });
+});
+app.get('/auth/login', auth.beginLogin);
+app.get('/auth/callback', auth.finishLogin);
+app.get('/auth/logout', auth.logout);
+app.get('/sala', function (req, res) {
+  res.set('Cache-Control', 'no-store');
+  auth.readSession(req, res);
+});
+
 app.get('/', function (req, res) {
   res.sendFile(__dirname + '/index.html');
+});
+
+// Los sockets requieren sesión cuando Auth0 está configurado
+io.use(function (socket, next) {
+  if (!auth.authSettings()) return next();
+  if (!auth.isReady()) return next(new Error('El inicio de sesión no está listo.'));
+  auth.authorizeSocket(socket, next);
 });
 
 io.on('connection', function (socket) {
@@ -41,7 +89,12 @@ io.on('connection', function (socket) {
         if (typeof msg === 'string' && msg.includes('fallo-lab7')) {
           throw new Error('Fallo controlado de prueba - Lab 7');
         }
-        const resultado = validation.validateMessage(msg);
+        // El nombre del remitente sale de la sesión de Auth0, no del cliente
+        var crudo = msg;
+        if (socket.data && socket.data.user && socket.data.user.name) {
+          crudo = auth.stampSender(msg, socket.data.user.name);
+        }
+        const resultado = validation.validateMessage(crudo);
         const valido = JSON.parse(resultado).valido;
         span.setAttribute('mensaje.valido', valido);
         mensajesTotal.add(1, { resultado: valido ? 'ok' : 'rechazado' });
@@ -66,6 +119,7 @@ if (require.main === module) {
   http.listen(port, function () {
     console.log('listening on *:' + port);
   });
+  startAuth();
 }
 
 module.exports = { http: http, io: io };
