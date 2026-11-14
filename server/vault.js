@@ -65,7 +65,7 @@ function assertConnectionString(connectionString) {
 }
 
 function vaultSsl() {
-  var extra = fs.readFileSync(path.join(__dirname, 'supabase-root-2021-ca.pem'), 'utf8');
+  var extra = fs.readFileSync(path.join(__dirname, 'prod-ca-2021.crt'), 'utf8');
   return {
     rejectUnauthorized: true,
     ca: tls.rootCertificates.concat(extra)
